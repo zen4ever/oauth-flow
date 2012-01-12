@@ -6,8 +6,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils import simplejson as json
 from django.utils.importlib import import_module
 
-from django.contrib.auth import authenticate
-
 from oauth2 import Consumer as OAuthConsumer, Token, Request as OAuthRequest, \
                    SignatureMethod_HMAC_SHA1
 
@@ -94,8 +92,7 @@ class ConsumerBasedOAuth(BaseOAuth):
 
         access_token = self.access_token(token)
 
-        kwargs.update({'token': access_token.to_string()})
-        return authenticate(*args, **kwargs)
+        return access_token.to_string()
 
     def unauthorized_token(self):
         """Return request for unauthorized token (first stage)"""
@@ -184,5 +181,4 @@ class BaseOAuth2(BaseOAuth):
             error = response.get('error_description') or response.get('error')
             raise ValueError('OAuth2 authentication failed: %s' % error)
         else:
-            kwargs.update({'token': response['access_token']})
-            return authenticate(*args, **kwargs)
+            return response['access_token']
