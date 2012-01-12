@@ -1,3 +1,4 @@
+import httplib2
 from urllib2 import Request, urlopen
 from urllib import urlencode
 
@@ -7,7 +8,9 @@ from django.utils import simplejson as json
 from django.utils.importlib import import_module
 
 from oauth2 import Consumer as OAuthConsumer, Token, Request as OAuthRequest, \
-                   SignatureMethod_HMAC_SHA1
+                   SignatureMethod_HMAC_SHA1, Client
+
+from oauth_flows.utils.anytree import etree
 
 
 HANDLERS = (
@@ -16,6 +19,15 @@ HANDLERS = (
     ('twitter', 'oauth_flow.handlers.TwitterHandler'),
     ('yahoo', 'oauth_flow.handlers.YahooHandler'),
 )
+
+
+class NotAuthorized(Exception):
+    pass
+
+
+class ServiceFail(Exception):
+    pass
+
 
 class OAuth20Token(object):
 
@@ -51,6 +63,20 @@ class BaseOAuth(object):
         self.redirect = redirect
         if redirect:
             self.redirect_uri = request.build_absolute_uri(redirect)
+
+    def _process_response(self, kind, response, content):
+        if response["status"] == "401":
+            raise NotAuthorized()
+        if not content:
+            raise ServiceFail("no content")
+        if kind == "raw":
+            return content
+        elif kind == "json":
+            return json.loads(content)
+        elif kind == "xml":
+            return etree.ElementTree(etree.fromstring(content))
+        else:
+            raise Exception("unsupported API kind")
 
     def get_user_id(self, response):
         return response['id']
@@ -149,6 +175,16 @@ class ConsumerBasedOAuth(BaseOAuth):
         """Setups consumer"""
         return OAuthConsumer(*self.get_key_and_secret())
 
+    def make_api_call(self, kind, url, token, method="GET", **kwargs):
+        if isinstance(token, basestring):
+            token = Token.from_string(token)
+        client = Client(self.consumer, token=token)
+        request_kwargs = dict(method=method)
+        if method == "POST":
+            request_kwargs["body"] = urlencode(kwargs["params"])
+        response, content = client.request(url, **request_kwargs)
+        return self._process_response(kind, response, content)
+
 
 class BaseOAuth2(BaseOAuth):
     AUTHORIZATION_URL = None
@@ -207,3 +243,17 @@ class BaseOAuth2(BaseOAuth):
             raise ValueError('OAuth2 authentication failed: %s' % error)
         else:
             return self.get_access_token_from_response(response)
+
+    def make_api_call(self, kind, url, token, method="GET", **kwargs):
+        request_kwargs = dict(method=method)
+        if method == "POST":
+            params = {
+                "access_token": str(token),
+            }
+            params.update(kwargs["params"])
+            request_kwargs["body"] = urlencode(params)
+        else:
+            url += "?%s" % urlencode(dict(access_token=str(token)))
+        http = httplib2.Http()
+        response, content = http.request(url, **request_kwargs)
+        return self._process_response(kind, response, content)
