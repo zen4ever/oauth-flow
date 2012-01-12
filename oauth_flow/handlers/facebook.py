@@ -6,7 +6,7 @@ import cgi
 from urllib import urlencode
 from urllib2 import urlopen
 
-from oauth_flow.handlers import BaseOAuth2
+from oauth_flow.handlers import BaseOAuth2, OAuth20Token
 
 
 class FacebookAuth(BaseOAuth2):
@@ -15,6 +15,9 @@ class FacebookAuth(BaseOAuth2):
     SCOPE_SEPARATOR = ','
     AUTHORIZATION_URL = 'https://www.facebook.com/dialog/oauth'
     SERVICE = 'facebook'
+
+    def get_access_token_from_response(self, response):
+        return OAuth20Token(response['access_token'][0], response['expires'][0])
 
     def auth_complete(self, *args, **kwargs):
         """Completes loging process, must return user instance"""
@@ -26,8 +29,8 @@ class FacebookAuth(BaseOAuth2):
                              'client_secret': secret,
                              'code': self.data['code']})
             response = cgi.parse_qs(urlopen(url).read())
-            access_token = response['access_token'][0]
-            return access_token
+
+            return self.get_access_token_from_response(response)
         else:
             error = self.data.get('error') or 'unknown error'
             raise ValueError('Authentication error: %s' % error)

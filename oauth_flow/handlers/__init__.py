@@ -17,6 +17,19 @@ HANDLERS = (
     ('yahoo', 'oauth_flow.handlers.YahooHandler'),
 )
 
+class OAuth20Token(object):
+
+    def __init__(self, token, expires=None):
+        self.token = token
+        if expires is not None:
+            import datetime
+            self.expires = datetime.datetime.now() + datetime.timedelta(seconds=expires)
+        else:
+            self.expires = None
+
+    def __str__(self):
+        return str(self.token)
+
 
 def get_handler(service, request, redirect):
     handlers = getattr(settings, 'OAUTH_FLOW_HANDLERS', HANDLERS)
@@ -31,12 +44,13 @@ def get_handler(service, request, redirect):
 
 class BaseOAuth(object):
 
-    def __init__(self, request, redirect):
+    def __init__(self, request, redirect=None):
         """Init method"""
         self.request = request
         self.data = request.REQUEST
         self.redirect = redirect
-        self.redirect_uri = request.build_absolute_uri(redirect)
+        if redirect:
+            self.redirect_uri = request.build_absolute_uri(redirect)
 
     def get_user_id(self, response):
         return response['id']
@@ -156,6 +170,17 @@ class BaseOAuth2(BaseOAuth):
         args.update(self.auth_extra_arguments())
         return self.AUTHORIZATION_URL + '?' + urlencode(args)
 
+    def oauth_request(self, token, url, extra_params=None):
+        params = {'access_token': token}
+        if extra_params:
+            params.update(extra_params)
+        url = url + '?' + urlencode(params)
+        data = json.load(urlopen(url))
+        return data
+
+    def get_access_token_from_response(self, response):
+        return OAuth20Token(response['access_token'], response['expires_in'])
+
     def auth_complete(self, *args, **kwargs):
         """Completes loging process, must return user instance"""
         if self.data.get('error'):
@@ -181,4 +206,4 @@ class BaseOAuth2(BaseOAuth):
             error = response.get('error_description') or response.get('error')
             raise ValueError('OAuth2 authentication failed: %s' % error)
         else:
-            return response['access_token']
+            return self.get_access_token_from_response(response)
