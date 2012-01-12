@@ -2,7 +2,9 @@ from urllib2 import Request, urlopen
 from urllib import urlencode
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.utils import simplejson as json
+from django.utils.importlib import import_module
 
 from django.contrib.auth import authenticate
 
@@ -10,12 +12,13 @@ from oauth2 import Consumer as OAuthConsumer, Token, Request as OAuthRequest, \
                    SignatureMethod_HMAC_SHA1
 
 
-HANDLERS = {
+HANDLERS = (
     ('facebook', 'oauth_flow.handlers.FacebookHandler'),
     ('google', 'oauth_flow.handlers.GoogleHandler'),
     ('twitter', 'oauth_flow.handlers.TwitterHandler'),
     ('yahoo', 'oauth_flow.handlers.YahooHandler'),
-}
+)
+
 
 def get_handler(service, request, redirect):
     handlers = getattr(settings, 'OAUTH_FLOW_HANDLERS', HANDLERS)
@@ -26,6 +29,7 @@ def get_handler(service, request, redirect):
         handler_instance = handler_class(request, redirect)
         return handler_instance
     raise ImproperlyConfigured('No handler for service %s' % service)
+
 
 class BaseOAuth(object):
 
@@ -39,6 +43,24 @@ class BaseOAuth(object):
     def get_user_id(self, response):
         return response['id']
 
+    def auth_extra_arguments(self):
+        return self.get_settings().get('EXTRA_ARGUMENTS', {})
+
+    def get_settings(self):
+        oauth_flow_settings = getattr(settings, 'DJANGO_OAUTH_FLOW_SETTINGS', {})
+        return oauth_flow_settings.get(self.SERVICE, {})
+
+    def get_key_and_secret(self):
+        """Return tuple with Consumer Key and Consumer Secret for current
+        service provider. Must return (key, secret), order *must* be respected.
+        """
+        service_settings = self.get_settings()
+        return service_settings['KEY'], service_settings['SECRET']
+
+    def get_scope(self):
+        """Return list with needed access scope"""
+        return self.get_settings().get('SCOPE', [])
+
 
 class ConsumerBasedOAuth(BaseOAuth):
     """Consumer based mechanism OAuth authentication, fill the needed
@@ -47,25 +69,21 @@ class ConsumerBasedOAuth(BaseOAuth):
         @AUTHORIZATION_URL       Authorization service url
         @REQUEST_TOKEN_URL       Request token URL
         @ACCESS_TOKEN_URL        Access token URL
-        @SERVER_URL              Authorization server URL
     """
     AUTHORIZATION_URL = ''
     REQUEST_TOKEN_URL = ''
     ACCESS_TOKEN_URL = ''
-    SERVER_URL = ''
-    SETTINGS_KEY_NAME = ''
-    SETTINGS_SECRET_NAME = ''
 
     def auth_url(self):
         """Return redirect url"""
         token = self.unauthorized_token()
-        name = self.AUTH_BACKEND.name + 'unauthorized_token_name'
+        name = self.SERVICE + 'unauthorized_token_name'
         self.request.session[name] = token.to_string()
         return self.oauth_authorization_request(token).to_url()
 
     def auth_complete(self, *args, **kwargs):
         """Return user, might be logged in"""
-        name = self.AUTH_BACKEND.name + 'unauthorized_token_name'
+        name = self.service + '_unauthorized_token_name'
         unauthed_token = self.request.session.get(name)
         if not unauthed_token:
             raise ValueError('Missing unauthorized token')
@@ -75,11 +93,8 @@ class ConsumerBasedOAuth(BaseOAuth):
             raise ValueError('Incorrect tokens')
 
         access_token = self.access_token(token)
-        data = self.user_data(access_token)
-        if data is not None:
-            data['access_token'] = access_token.to_string()
 
-        kwargs.update({'response': data, self.AUTH_BACKEND.name: True})
+        kwargs.update({'token': access_token.to_string()})
         return authenticate(*args, **kwargs)
 
     def unauthorized_token(self):
@@ -118,27 +133,10 @@ class ConsumerBasedOAuth(BaseOAuth):
         request = self.oauth_request(token, self.ACCESS_TOKEN_URL)
         return Token.from_string(self.fetch_response(request))
 
-    def user_data(self, access_token):
-        """Loads user data from service"""
-        raise NotImplementedError('Implement in subclass')
-
     @property
     def consumer(self):
         """Setups consumer"""
         return OAuthConsumer(*self.get_key_and_secret())
-
-    def get_key_and_secret(self):
-        """Return tuple with Consumer Key and Consumer Secret for current
-        service provider. Must return (key, secret), order *must* be respected.
-        """
-        return getattr(settings, self.SETTINGS_KEY_NAME, None), \
-               getattr(settings, self.SETTINGS_SECRET_NAME, None)
-
-    @classmethod
-    def enabled(cls):
-        """Return backend enabled status by checking basic settings"""
-        return all(hasattr(settings, name) for name in
-                        (cls.SETTINGS_KEY_NAME, cls.SETTINGS_SECRET_NAME))
 
 
 class BaseOAuth2(BaseOAuth):
@@ -186,17 +184,5 @@ class BaseOAuth2(BaseOAuth):
             error = response.get('error_description') or response.get('error')
             raise ValueError('OAuth2 authentication failed: %s' % error)
         else:
-            response.update(self.user_data(response['access_token']) or {})
-            kwargs.update({'response': response, self.AUTH_BACKEND.name: True})
+            kwargs.update({'token': response['access_token']})
             return authenticate(*args, **kwargs)
-
-    def get_scope(self):
-        """Return list with needed access scope"""
-        return []
-
-    def get_key_and_secret(self):
-        """Return tuple with Consumer Key and Consumer Secret for current
-        service provider. Must return (key, secret), order *must* be respected.
-        """
-        return getattr(settings, self.SETTINGS_KEY_NAME, None), \
-               getattr(settings, self.SETTINGS_SECRET_NAME, None)
