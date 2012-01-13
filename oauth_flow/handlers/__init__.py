@@ -10,14 +10,14 @@ from django.utils.importlib import import_module
 from oauth2 import Consumer as OAuthConsumer, Token, Request as OAuthRequest, \
                    SignatureMethod_HMAC_SHA1, Client
 
-from oauth_flows.utils.anytree import etree
+from oauth_flow.utils.anytree import etree
 
 
 HANDLERS = (
-    ('facebook', 'oauth_flow.handlers.FacebookHandler'),
-    ('google', 'oauth_flow.handlers.GoogleHandler'),
-    ('twitter', 'oauth_flow.handlers.TwitterHandler'),
-    ('yahoo', 'oauth_flow.handlers.YahooHandler'),
+    ('facebook', 'oauth_flow.handlers.facebook.FacebookHandler'),
+    ('google', 'oauth_flow.handlers.google.GoogleHandler'),
+    ('twitter', 'oauth_flow.handlers.twitter.TwitterHandler'),
+    ('yahoo', 'oauth_flow.handlers.yahoo.YahooHandler'),
 )
 
 
@@ -35,7 +35,7 @@ class OAuth20Token(object):
         self.token = token
         if expires is not None:
             import datetime
-            self.expires = datetime.datetime.now() + datetime.timedelta(seconds=expires)
+            self.expires = datetime.datetime.now() + datetime.timedelta(seconds=int(expires))
         else:
             self.expires = None
 
@@ -43,25 +43,27 @@ class OAuth20Token(object):
         return str(self.token)
 
 
-def get_handler(service, request, redirect):
+def get_handler(service, **kwargs):
     handlers = getattr(settings, 'OAUTH_FLOW_HANDLERS', HANDLERS)
     handler_module = dict(handlers).get(service, None)
     if handler_module:
         module, handler = handler_module.rsplit('.', 1)
         handler_class = getattr(import_module(module), handler)
-        handler_instance = handler_class(request, redirect)
+        handler_instance = handler_class(**kwargs)
         return handler_instance
     raise ImproperlyConfigured('No handler for service %s' % service)
 
 
 class BaseOAuth(object):
 
-    def __init__(self, request, redirect=None):
+    def __init__(self, request=None, redirect=None, redirect_uri=None):
         """Init method"""
         self.request = request
-        self.data = request.REQUEST
+        if request:
+            self.data = request.REQUEST
         self.redirect = redirect
-        if redirect:
+        self.redirect_uri = redirect_uri
+        if redirect and request:
             self.redirect_uri = request.build_absolute_uri(redirect)
 
     def _process_response(self, kind, response, content):
@@ -85,7 +87,7 @@ class BaseOAuth(object):
         return self.get_settings().get('EXTRA_ARGUMENTS', {})
 
     def get_settings(self):
-        oauth_flow_settings = getattr(settings, 'DJANGO_OAUTH_FLOW_SETTINGS', {})
+        oauth_flow_settings = getattr(settings, 'OAUTH_FLOW_SETTINGS', {})
         return oauth_flow_settings.get(self.SERVICE, {})
 
     def get_key_and_secret(self):

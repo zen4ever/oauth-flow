@@ -9,7 +9,7 @@ from urllib2 import urlopen
 from oauth_flow.handlers import BaseOAuth2, OAuth20Token
 
 
-class FacebookAuth(BaseOAuth2):
+class FacebookHandler(BaseOAuth2):
     """Facebook OAuth2 support"""
     RESPONSE_TYPE = None
     SCOPE_SEPARATOR = ','

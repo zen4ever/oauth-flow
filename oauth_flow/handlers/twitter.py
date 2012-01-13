@@ -10,7 +10,7 @@ TWITTER_ACCESS_TOKEN_URL = 'https://%s/oauth/access_token' % TWITTER_SERVER
 TWITTER_AUTHORIZATION_URL = 'http://%s/oauth/authenticate' % TWITTER_SERVER
 
 
-class TwitterAuth(ConsumerBasedOAuth):
+class TwitterHandler(ConsumerBasedOAuth):
     """Twitter OAuth authentication mechanism"""
     AUTHORIZATION_URL = TWITTER_AUTHORIZATION_URL
     REQUEST_TOKEN_URL = TWITTER_REQUEST_TOKEN_URL
