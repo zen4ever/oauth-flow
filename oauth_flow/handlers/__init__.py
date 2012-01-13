@@ -257,7 +257,10 @@ class BaseOAuth2(BaseOAuth):
             params.update(kwargs["params"])
             request_kwargs["body"] = urlencode(params)
         else:
-            url += "?%s" % urlencode(dict(access_token=str(token)))
+            symbol = "?"
+            if "?" in url:
+                symbol = "&"
+            url += "%s%s" % (symbol, urlencode(dict(access_token=str(token))))
         http = httplib2.Http()
         response, content = http.request(url, **request_kwargs)
         return self._process_response(kind, response, content)
