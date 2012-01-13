@@ -114,17 +114,19 @@ class ConsumerBasedOAuth(BaseOAuth):
     REQUEST_TOKEN_URL = ''
     ACCESS_TOKEN_URL = ''
 
+    @property
+    def unauthorized_token_name(self):
+        return self.SERVICE + '_unauthorized_token_name'
+
     def auth_url(self):
         """Return redirect url"""
         token = self.unauthorized_token()
-        name = self.SERVICE + 'unauthorized_token_name'
-        self.request.session[name] = token.to_string()
+        self.request.session[self.unauthorized_token_name] = token.to_string()
         return self.oauth_authorization_request(token).to_url()
 
     def auth_complete(self, *args, **kwargs):
         """Return user, might be logged in"""
-        name = self.service + '_unauthorized_token_name'
-        unauthed_token = self.request.session.get(name)
+        unauthed_token = self.request.session.get(self.unauthorized_token_name)
         if not unauthed_token:
             raise ValueError('Missing unauthorized token')
 
