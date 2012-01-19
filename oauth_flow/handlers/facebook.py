@@ -17,7 +17,8 @@ class FacebookHandler(BaseOAuth2):
     SERVICE = 'facebook'
 
     def get_access_token_from_response(self, response):
-        return OAuth20Token(response['access_token'][0], response['expires'][0])
+        expires = response.get('expires', [None])[0]
+        return OAuth20Token(response['access_token'][0], expires)
 
     def auth_complete(self, *args, **kwargs):
         """Completes loging process, must return user instance"""
