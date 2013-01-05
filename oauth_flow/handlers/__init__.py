@@ -1,11 +1,8 @@
 import httplib2
+import json
+import sys
 from urllib2 import Request, urlopen
 from urllib import urlencode
-
-from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
-from django.utils import simplejson as json
-from django.utils.importlib import import_module
 
 from oauth2 import Consumer as OAuthConsumer, Token, Request as OAuthRequest, \
                    SignatureMethod_HMAC_SHA1, Client
@@ -20,6 +17,19 @@ HANDLERS = (
     ('yahoo', 'oauth_flow.handlers.yahoo.YahooHandler'),
     ('aol', 'oauth_flow.handlers.aol.AOLHandler'),
 )
+
+
+def import_module(name):
+    """
+    Simplified version of import_module from Django,
+    supports only absolute imports.
+    """
+    __import__(name)
+    return sys.modules[name]
+
+
+class ImproperlyConfigured(Exception):
+    pass
 
 
 class NotAuthorized(Exception):
@@ -45,19 +55,21 @@ class OAuth20Token(object):
 
 
 def get_handler(service, **kwargs):
-    handlers = getattr(settings, 'OAUTH_FLOW_HANDLERS', HANDLERS)
+    handlers = kwargs.get('handlers', HANDLERS)
+    # exctract settings for individual service
+    settings = kwargs.pop('settings', {}).get(service, {})
     handler_module = dict(handlers).get(service, None)
     if handler_module:
         module, handler = handler_module.rsplit('.', 1)
         handler_class = getattr(import_module(module), handler)
-        handler_instance = handler_class(**kwargs)
+        handler_instance = handler_class(settings=settings, **kwargs)
         return handler_instance
     raise ImproperlyConfigured('No handler for service %s' % service)
 
 
 class BaseOAuth(object):
 
-    def __init__(self, request=None, redirect=None, redirect_uri=None):
+    def __init__(self, request=None, redirect=None, redirect_uri=None, **kwargs):
         """Init method"""
         self.request = request
         if request:
@@ -66,6 +78,7 @@ class BaseOAuth(object):
         self.redirect_uri = redirect_uri
         if redirect and request:
             self.redirect_uri = request.build_absolute_uri(redirect)
+        self.settings = kwargs.get('settings', {})
 
     def _process_response(self, kind, response, content):
         if response["status"] == "401":
@@ -85,22 +98,17 @@ class BaseOAuth(object):
         return response['id']
 
     def auth_extra_arguments(self):
-        return self.get_settings().get('EXTRA_ARGUMENTS', {})
-
-    def get_settings(self):
-        oauth_flow_settings = getattr(settings, 'OAUTH_FLOW_SETTINGS', {})
-        return oauth_flow_settings.get(self.SERVICE, {})
+        return self.settings.get('EXTRA_ARGUMENTS', {})
 
     def get_key_and_secret(self):
         """Return tuple with Consumer Key and Consumer Secret for current
         service provider. Must return (key, secret), order *must* be respected.
         """
-        service_settings = self.get_settings()
-        return service_settings['KEY'], service_settings['SECRET']
+        return self.settings['KEY'], self.settings['SECRET']
 
     def get_scope(self):
         """Return list with needed access scope"""
-        return self.get_settings().get('SCOPE', [])
+        return self.settings.get('SCOPE', [])
 
 
 class ConsumerBasedOAuth(BaseOAuth):
