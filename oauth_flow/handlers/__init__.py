@@ -18,6 +18,7 @@ HANDLERS = (
     ('google', 'oauth_flow.handlers.google.GoogleHandler'),
     ('twitter', 'oauth_flow.handlers.twitter.TwitterHandler'),
     ('yahoo', 'oauth_flow.handlers.yahoo.YahooHandler'),
+    ('aol', 'oauth_flow.handlers.aol.AOLHandler'),
 )
 
 
